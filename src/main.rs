@@ -2,6 +2,7 @@ use axum::{extract::Json, response::IntoResponse, routing::post, Router};
 use ed25519_dalek::{SigningKey, VerifyingKey, Signature, Signer, Verifier};
 use serde::{Deserialize, Serialize};
 use solana_sdk::{
+    pubkey::Pubkey,
     signature::{Keypair as SolanaKeypair, Signer as SolanaSigner},
     system_instruction,
 };
@@ -9,6 +10,7 @@ use spl_token::instruction as token_instruction;
 use base64::{engine::general_purpose, Engine as _};
 use bs58;
 use serde_json::Value;
+
 
 #[tokio::main]
 async fn main() {
@@ -37,6 +39,14 @@ struct ApiResponse<T> {
     error: Option<String>,
 }
 
+fn error_response(message: &str) -> Json<ApiResponse<serde_json::Value>> {
+    Json(ApiResponse {
+        success: false,
+        data: None,
+        error: Some(message.to_string()),
+    })
+}
+
 pub async fn generate_keypair() -> impl IntoResponse {
     let keypair = SolanaKeypair::new();
     let pubkey = keypair.pubkey().to_string();
@@ -60,18 +70,21 @@ struct CreateTokenRequest {
 
 async fn create_token(Json(req): Json<CreateTokenRequest>) -> impl IntoResponse {
     let program_id = spl_token::id();
-    let mint = req.mint.parse().unwrap();
-    println!("mint: {}", req.mint_authority);
-    let authority = req.mint_authority.parse().unwrap();
 
-    let instruction = token_instruction::initialize_mint(
-        &program_id,
-        &mint,
-        &authority,
-        None,
-        req.decimals,
-    )
-        .unwrap();
+    let mint = match req.mint.parse::<Pubkey>() {
+        Ok(pk) => pk,
+        Err(_) => return error_response("Invalid mint address"),
+    };
+
+    let authority = match req.mint_authority.parse::<Pubkey>() {
+        Ok(auth) => auth,
+        Err(_) => return error_response("Invalid mint auth"),
+    };
+
+    let instruction = match token_instruction::initialize_mint(&program_id, &mint, &authority, None, req.decimals) {
+        Ok(i) => i,
+        Err(_) => return error_response("Failed to create instruction"),
+    };
 
     Json(ApiResponse {
         success: true,
@@ -93,15 +106,34 @@ struct MintTokenRequest {
 }
 
 async fn mint_token(Json(req): Json<MintTokenRequest>) -> impl IntoResponse {
-    let instruction = token_instruction::mint_to(
+    let mint = match req.mint.parse::<Pubkey>() {
+        Ok(pk) => pk,
+        Err(_) => return error_response("Invalid mint address"),
+    };
+
+    let destination = match req.destination.parse::<Pubkey>() {
+        Ok(pk) => pk,
+        Err(_) => return error_response("Invalid destination address"),
+    };
+
+    let authority = match req.authority.parse::<Pubkey>() {
+        Ok(pk) => pk,
+        Err(_) => return error_response("Invalid authority address"),
+    };
+
+
+    let instruction = match token_instruction::mint_to(
         &spl_token::id(),
-        &req.mint.parse().unwrap(),
-        &req.destination.parse().unwrap(),
-        &req.authority.parse().unwrap(),
+        &mint,
+        &destination,
+        &authority,
         &[],
         req.amount,
-    )
-        .unwrap();
+    ) {
+        Ok(i) => i,
+        Err(_) => return error_response("Failed to construct mint_to instruction"),
+    };
+
 
     Json(ApiResponse {
         success: true,
@@ -146,14 +178,9 @@ pub async fn sign_message(Json(req): Json<SignMessageRequest>) -> impl IntoRespo
                 error: None,
             })
         }
-        Err(_) => Json(ApiResponse::<Value> {
-            success: false,
-            data: None,
-            error: Some("Invalid base58 secret key format".to_string()),
-        }),
+        Err(_) => error_response("Invalid base58 secret format"),
     }
 }
-
 
 #[derive(Deserialize)]
 struct VerifyMessageRequest {
@@ -191,11 +218,7 @@ pub async fn verify_message(Json(req): Json<VerifyMessageRequest>) -> impl IntoR
                 error: None,
             })
         }
-        _ => Json(ApiResponse::<Value> {
-            success: false,
-            data: None,
-            error: Some("Invalid pubkey or signature format".into()),
-        }),
+        _ => error_response("Invalid pubkey or signature format"),
     }
 }
 
@@ -207,11 +230,16 @@ struct SendSolRequest {
 }
 
 async fn send_sol(Json(req): Json<SendSolRequest>) -> impl IntoResponse {
-    let instruction = system_instruction::transfer(
-        &req.from.parse().unwrap(),
-        &req.to.parse().unwrap(),
-        req.lamports,
-    );
+    let from = match req.from.parse::<Pubkey>() {
+        Ok(pk) => pk,
+        Err(_) => return error_response("Invalid sender address"),
+    };
+    let to = match req.to.parse::<Pubkey>() {
+        Ok(pk) => pk,
+        Err(_) => return error_response("Invalid recipient address"),
+    };
+
+    let instruction = system_instruction::transfer(&from, &to, req.lamports);
 
     Json(ApiResponse {
         success: true,
@@ -234,15 +262,30 @@ struct SendTokenRequest {
 }
 
 async fn send_token(Json(req): Json<SendTokenRequest>) -> impl IntoResponse {
-    let instruction = token_instruction::transfer(
+    let destination = match req.destination.parse::<Pubkey>() {
+        Ok(pk) => pk,
+        Err(_) => return error_response("Invalid destination address"),
+    };
+    let mint = match req.mint.parse::<Pubkey>() {
+        Ok(pk) => pk,
+        Err(_) => return error_response("Invalid mint address"),
+    };
+    let owner = match req.owner.parse::<Pubkey>() {
+        Ok(pk) => pk,
+        Err(_) => return error_response("Invalid owner address"),
+    };
+
+    let instruction = match token_instruction::transfer(
         &spl_token::id(),
-        &req.mint.parse().unwrap(),
-        &req.destination.parse().unwrap(),
-        &req.owner.parse().unwrap(),
+        &mint,
+        &destination,
+        &owner,
         &[],
         req.amount,
-    )
-        .unwrap();
+    ) {
+        Ok(i) => i,
+        Err(_) => return error_response("Failed to construct token transfer instruction"),
+    };
 
     Json(ApiResponse {
         success: true,
