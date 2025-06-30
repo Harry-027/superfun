@@ -86,12 +86,18 @@ async fn create_token(Json(req): Json<CreateTokenRequest>) -> impl IntoResponse 
         Err(_) => return error_response("Failed to create instruction"),
     };
 
+    let encoded_data = if instruction.data.is_empty() {
+        return error_response("Instruction data is empty — possibly invalid inputs");
+    } else {
+        general_purpose::STANDARD.encode(&instruction.data)
+    };
+
     Json(ApiResponse {
         success: true,
         data: Some(serde_json::json!({
             "program_id": instruction.program_id.to_string(),
             "accounts": instruction.accounts,
-            "instruction_data": general_purpose::STANDARD.encode(&instruction.data),
+            "instruction_data": encoded_data,
         })),
         error: None,
     })
@@ -134,13 +140,19 @@ async fn mint_token(Json(req): Json<MintTokenRequest>) -> impl IntoResponse {
         Err(_) => return error_response("Failed to construct mint_to instruction"),
     };
 
+       let encoded_data = if instruction.data.is_empty() {
+        return error_response("Instruction data is empty — possibly invalid inputs");
+    } else {
+        general_purpose::STANDARD.encode(&instruction.data)
+    };
+
 
     Json(ApiResponse {
         success: true,
         data: Some(serde_json::json!({
             "program_id": instruction.program_id.to_string(),
             "accounts": instruction.accounts,
-            "instruction_data": general_purpose::STANDARD.encode(&instruction.data),
+            "instruction_data": encoded_data,
         })),
         error: None,
     })
@@ -148,7 +160,7 @@ async fn mint_token(Json(req): Json<MintTokenRequest>) -> impl IntoResponse {
 
 
 #[derive(Deserialize)]
-struct SignMessageRequest {
+pub struct SignMessageRequest {
     message: String,
     secret: String,
 }
@@ -183,7 +195,7 @@ pub async fn sign_message(Json(req): Json<SignMessageRequest>) -> impl IntoRespo
 }
 
 #[derive(Deserialize)]
-struct VerifyMessageRequest {
+pub struct VerifyMessageRequest {
     message: String,
     signature: String,
     pubkey: String,
@@ -223,7 +235,7 @@ pub async fn verify_message(Json(req): Json<VerifyMessageRequest>) -> impl IntoR
 }
 
 #[derive(Deserialize)]
-struct SendSolRequest {
+pub struct SendSolRequest {
     from: String,
     to: String,
     lamports: u64,
@@ -241,12 +253,18 @@ async fn send_sol(Json(req): Json<SendSolRequest>) -> impl IntoResponse {
 
     let instruction = system_instruction::transfer(&from, &to, req.lamports);
 
+     let encoded_data = if instruction.data.is_empty() {
+        return error_response("Instruction data is empty — possibly invalid inputs");
+    } else {
+        general_purpose::STANDARD.encode(&instruction.data)
+    };
+
     Json(ApiResponse {
         success: true,
         data: Some(serde_json::json!({
             "program_id": instruction.program_id.to_string(),
             "accounts": instruction.accounts.iter().map(|a| a.pubkey.to_string()).collect::<Vec<_>>(),
-            "instruction_data": general_purpose::STANDARD.encode(&instruction.data),
+            "instruction_data": encoded_data,
         })),
         error: None,
     })
@@ -254,7 +272,7 @@ async fn send_sol(Json(req): Json<SendSolRequest>) -> impl IntoResponse {
 
 
 #[derive(Deserialize)]
-struct SendTokenRequest {
+pub struct SendTokenRequest {
     destination: String,
     mint: String,
     owner: String,
@@ -267,11 +285,11 @@ async fn send_token(Json(req): Json<SendTokenRequest>) -> impl IntoResponse {
         Err(_) => return error_response("Invalid destination address"),
     };
     let mint = match req.mint.parse::<Pubkey>() {
-        Ok(pk) => pk,
+        Ok(m) => m,
         Err(_) => return error_response("Invalid mint address"),
     };
     let owner = match req.owner.parse::<Pubkey>() {
-        Ok(pk) => pk,
+        Ok(own) => own,
         Err(_) => return error_response("Invalid owner address"),
     };
 
@@ -287,12 +305,18 @@ async fn send_token(Json(req): Json<SendTokenRequest>) -> impl IntoResponse {
         Err(_) => return error_response("Failed to construct token transfer instruction"),
     };
 
+    let encoded_data = if instruction.data.is_empty() {
+        return error_response("Instruction data is empty — possibly invalid inputs");
+    } else {
+        general_purpose::STANDARD.encode(&instruction.data)
+    };
+
     Json(ApiResponse {
         success: true,
         data: Some(serde_json::json!({
             "program_id": instruction.program_id.to_string(),
             "accounts": instruction.accounts,
-            "instruction_data": general_purpose::STANDARD.encode(&instruction.data),
+            "instruction_data": encoded_data,
         })),
         error: None,
     })
